@@ -501,6 +501,35 @@ def elementStiffness11(E, G, d, link):
     
     return K
 
+def elementStiffness12(E, G, d, link):
+    S = np.pi*(d**2)/4
+    Iy = np.pi*(d**4)/64
+    Iz = np.pi*(d**4)/64
+    J = Iy + Iz
+    
+    K = np.array([[-E*S/link,                 0,                 0,        0,                 0,                0],
+                  [       0, -12*E*Iz/(link**3),                 0,        0,                 0, 6*E*Iz/(link**2)],
+                  [       0,                 0, -12*E*Iy/(link**3),        0, -6*E*Iy/(link**2),                0],
+                  [       0,                 0,                 0, -G*J/link,                 0,                0],
+                  [       0,                 0, 6*E*Iy/(link**2),        0,       2*E*Iy/link,                0],
+                  [       0,  -6*E*Iz/(link**2),                 0,        0,                 0,      2*E*Iz/link]], dtype=float)
+    
+    return K
+
+def elementStiffness22(E, G, d, link):
+    S = np.pi*(d**2)/4
+    Iy = np.pi*(d**4)/64
+    Iz = np.pi*(d**4)/64
+    J = Iy + Iz
+    
+    K = np.array([[E*S/link,                 0,                 0,        0,                 0,                0],
+                  [       0, 12*E*Iz/(link**3),                 0,        0,                 0, -6*E*Iz/(link**2)],
+                  [       0,                 0, 12*E*Iy/(link**3),        0, 6*E*Iy/(link**2),                0],
+                  [       0,                 0,                 0, G*J/link,                 0,                0],
+                  [       0,                 0, 6*E*Iy/(link**2),        0,       4*E*Iy/link,                0],
+                  [       0, -6*E*Iz/(link**2),                 0,        0,                 0,      4*E*Iz/link]], dtype=float)
+    
+    return K
 
 def KThetaLeg(K_active, E, G, d, link):
     K0 = np.zeros(13, dtype=float)
@@ -509,10 +538,10 @@ def KThetaLeg(K_active, E, G, d, link):
     zeros_6_1 = np.zeros((6,1), dtype=float)
     zeros_6_6 = np.zeros((6,6), dtype=float)
 
-    K1 = elementStiffness11(E, G, d[0], link[0])
+    K1 = elementStiffness22(E, G, d[0], link[0])
     K1 = np.hstack([zeros_6_1, K1, zeros_6_6])
 
-    K2 = elementStiffness11(E, G, d[1], link[1])
+    K2 = elementStiffness22(E, G, d[1], link[1])
     K2 = np.hstack([zeros_6_1, zeros_6_6, K2])
 
     K = np.vstack([K0, K1, K2])
@@ -525,11 +554,12 @@ def KcTripteronVJM(Ktheta, Jq, Jtheta):
         Kc0 = np.linalg.inv(np.linalg.multi_dot([Jtheta[i], np.linalg.inv(Ktheta[i]), np.transpose(Jtheta[i])]))
         Kc = Kc0 - np.linalg.multi_dot([Kc0, Jq[i], np.linalg.inv(np.linalg.multi_dot([np.transpose(Jq[i]), Kc0, Jq[i]])), np.transpose(Jq[i]), Kc0])
         Kc_total.append(Kc)
+
     Kc_total = Kc_total[0] + Kc_total[1] + Kc_total[2]
     return Kc_total
 
 
-def dtTripteronVJM(Kc, F):
+def dtTripteron(Kc, F):
     dt = np.linalg.inv(Kc).dot(F)
     return dt
 
@@ -584,7 +614,7 @@ E = 7.0000e+10 # Young's modulus
 G = 2.5500e+10 # shear modulus
 Ktheta = KThetaLeg(K_active, E, G, d, link)
 Ktheta = [Ktheta, Ktheta, Ktheta]
-F = np.array([[100], [100], [0], [0], [0], [0]], dtype=float)
+F = np.array([[0], [0], [1000], [0], [0], [0]], dtype=float)
 
 
 xScatter = np.array([])
@@ -593,8 +623,8 @@ zScatter = np.array([])
 dScatter = np.array([])
 
 start = 0.01
-step = 10.1
-step_z = 10.1
+step = 0.1
+step_z = 0.1
 for z in np.arange(start, space_z + start, step_z):
     xData = np.array([])
     yData = np.array([])
@@ -616,7 +646,7 @@ for z in np.arange(start, space_z + start, step_z):
 
                 Kc = KcTripteronVJM(Ktheta, Jq, Jtheta)
 
-                dt = dtTripteronVJM(Kc, F)
+                dt = dtTripteron(Kc, F)
                 deflection = np.sqrt(dt[0]**2 + dt[1]**2 + dt[2]**2)
                 
                 xData = np.append(xData, x)
@@ -625,7 +655,8 @@ for z in np.arange(start, space_z + start, step_z):
                 dData = np.append(dData, deflection)
             except (KeyboardInterrupt, SystemExit):
                 raise
-            except:
+            except Exception as error:
+                print(error)
                 pass
 
     xScatter = np.append(xScatter, xData)
@@ -635,52 +666,19 @@ for z in np.arange(start, space_z + start, step_z):
 
     N = int((dData.shape[0])**.5)
     dData = dData.reshape(N, N)
-    cmap = 'RdGy'
-    cmap = plt.cm.get_cmap('RdGy', 24)
+    
+    cmap = plt.cm.get_cmap('RdGy_r', 12)
 
     plt.imshow(dData, extent=(np.amin(xData), np.amax(xData), np.amin(yData), np.amax(yData)), cmap=cmap, interpolation='lanczos')
     plt.colorbar()
-    plt.clim(0.00018, 0.00022)
+    #plt.clim(0.00018, 0.00022)
 
     filename = './maps/VJM_z_' + str(z)
     #plt.savefig(filename + '.svg', format="svg")
     plt.savefig(filename + '.jpg', format="jpg")
     plt.close()
 
-plotDeflection(xScatter, yScatter, zScatter, dScatter, 'RdGy', 60)
-
-
-
-
-def elementStiffness12(E, G, d, link):
-    S = np.pi*(d**2)/4
-    Iy = np.pi*(d**4)/64
-    Iz = np.pi*(d**4)/64
-    J = Iy + Iz
-    
-    K = np.array([[-E*S/link,                 0,                 0,        0,                 0,                0],
-                  [       0, -12*E*Iz/(link**3),                 0,        0,                 0, 6*E*Iz/(link**2)],
-                  [       0,                 0, -12*E*Iy/(link**3),        0, -6*E*Iy/(link**2),                0],
-                  [       0,                 0,                 0, -G*J/link,                 0,                0],
-                  [       0,                 0, 6*E*Iy/(link**2),        0,       2*E*Iy/link,                0],
-                  [       0,  -6*E*Iz/(link**2),                 0,        0,                 0,      2*E*Iz/link]], dtype=float)
-    
-    return K
-
-def elementStiffness22(E, G, d, link):
-    S = np.pi*(d**2)/4
-    Iy = np.pi*(d**4)/64
-    Iz = np.pi*(d**4)/64
-    J = Iy + Iz
-    
-    K = np.array([[E*S/link,                 0,                 0,        0,                 0,                0],
-                  [       0, 12*E*Iz/(link**3),                 0,        0,                 0, -6*E*Iz/(link**2)],
-                  [       0,                 0, 12*E*Iy/(link**3),        0, 6*E*Iy/(link**2),                0],
-                  [       0,                 0,                 0, G*J/link,                 0,                0],
-                  [       0,                 0, 6*E*Iy/(link**2),        0,       4*E*Iy/link,                0],
-                  [       0, -6*E*Iz/(link**2),                 0,        0,                 0,      4*E*Iz/link]], dtype=float)
-    
-    return K
+plotDeflection(xScatter, yScatter, zScatter, dScatter, 'RdGy_r', 60)
 
 
 def transformStiffness(T_base, p_global, q_passive, link):
@@ -694,13 +692,11 @@ def transformStiffness(T_base, p_global, q_passive, link):
                                        Tz(p_global[i]), # active joint
                                        Rz(q[0])]) # passive joint
         rotationLink1 = toLink1[0:3, 0:3]
-        #rotationLink1 = np.transpose(rotationLink1)
 
         toLink2 = np.linalg.multi_dot([toLink1, # transform to the passive joint
                                        Tx(link[0]), # rigid link
                                        Rz(q[1])]) # passive joint
         rotationLink2 = toLink2[0:3, 0:3]
-        #rotationLink2 = np.transpose(rotationLink2)
 
         zeros = np.zeros((3,3), dtype=float)
 
@@ -721,21 +717,64 @@ K22 = elementStiffness22(E, G, d[0], link[0])
 #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 np.set_printoptions(precision=2, suppress=True, linewidth=200)
 
-lambda_r_12 = np.array([[1, 0, 0, 0, 0, 0],
-                        [0, 1, 0, 0, 0, 0],
-                        [0, 0, 0, 1, 0, 0],
-                        [0, 0, 0, 0, 1, 0],
-                        [0, 0, 0, 0, 0, 1]], dtype=float)
+lambda_r_12_x = np.array([[0, 1, 0, 0, 0, 0],
+                          [0, 0, 1, 0, 0, 0],
+                          [0, 0, 0, 1, 0, 0],
+                          [0, 0, 0, 0, 1, 0],
+                          [0, 0, 0, 0, 0, 1]], dtype=float)
 
-lambda_e_12 = np.array([0, 0, 1, 0, 0, 0], dtype=float)
+lambda_e_12_x = np.array([1, 0, 0, 0, 0, 0], dtype=float)
 
-lambda_r_34 = lambda_r_56 = lambda_r_78  = np.array([[1, 0, 0, 0, 0, 0],
-                                                     [0, 1, 0, 0, 0, 0],
-                                                     [0, 0, 1, 0, 0, 0],
-                                                     [0, 0, 0, 1, 0, 0],
-                                                     [0, 0, 0, 0, 1, 0]], dtype=float)
+lambda_r_12_y = np.array([[1, 0, 0, 0, 0, 0],
+                          [0, 0, 1, 0, 0, 0],
+                          [0, 0, 0, 1, 0, 0],
+                          [0, 0, 0, 0, 1, 0],
+                          [0, 0, 0, 0, 0, 1]], dtype=float)
 
-lambda_p_34 = lambda_p_56 = lambda_p_78 = np.array([0, 0, 0, 0, 0, 1], dtype=float)
+lambda_e_12_y = np.array([0, 1, 0, 0, 0, 0], dtype=float)
+
+lambda_r_12_z = np.array([[1, 0, 0, 0, 0, 0],
+                          [0, 1, 0, 0, 0, 0],
+                          [0, 0, 0, 1, 0, 0],
+                          [0, 0, 0, 0, 1, 0],
+                          [0, 0, 0, 0, 0, 1]], dtype=float)
+
+lambda_e_12_z = np.array([0, 0, 1, 0, 0, 0], dtype=float)
+
+lambda_r_12 = [lambda_r_12_x, lambda_r_12_y, lambda_r_12_z]
+lambda_e_12 = [lambda_e_12_x, lambda_e_12_y, lambda_e_12_z]
+
+lambda_r_34_x = lambda_r_56_x = lambda_r_78_x  = np.array([[1, 0, 0, 0, 0, 0],
+                                                           [0, 1, 0, 0, 0, 0],
+                                                           [0, 0, 1, 0, 0, 0],
+                                                           [0, 0, 0, 0, 1, 0],
+                                                           [0, 0, 0, 0, 0, 1]], dtype=float)
+
+lambda_p_34_x = lambda_p_56_x = lambda_p_78_x = np.array([0, 0, 0, 1, 0, 0], dtype=float)
+
+lambda_r_34_y = lambda_r_56_y = lambda_r_78_y  = np.array([[1, 0, 0, 0, 0, 0],
+                                                           [0, 1, 0, 0, 0, 0],
+                                                           [0, 0, 1, 0, 0, 0],
+                                                           [0, 0, 0, 1, 0, 0],
+                                                           [0, 0, 0, 0, 0, 1]], dtype=float)
+
+lambda_p_34_y = lambda_p_56_y = lambda_p_78_y = np.array([0, 0, 0, 0, 1, 0], dtype=float)
+
+lambda_r_34_z = lambda_r_56_z = lambda_r_78_z  = np.array([[1, 0, 0, 0, 0, 0],
+                                                           [0, 1, 0, 0, 0, 0],
+                                                           [0, 0, 1, 0, 0, 0],
+                                                           [0, 0, 0, 1, 0, 0],
+                                                           [0, 0, 0, 0, 1, 0]], dtype=float)
+
+lambda_p_34_z = lambda_p_56_z = lambda_p_78_z = np.array([0, 0, 0, 0, 0, 1], dtype=float)
+
+lambda_r_34 = [lambda_r_34_x, lambda_r_34_y, lambda_r_34_z]
+lambda_r_56 = [lambda_r_56_x, lambda_r_56_y, lambda_r_56_z]
+lambda_r_78 = [lambda_r_78_x, lambda_r_78_y, lambda_r_78_z]
+
+lambda_p_34 = [lambda_p_34_x, lambda_p_34_y, lambda_p_34_z]
+lambda_p_56 = [lambda_p_56_x, lambda_p_56_y, lambda_p_56_z]
+lambda_p_78 = [lambda_p_78_x, lambda_p_78_y, lambda_p_78_z]
 
 def KcTripteronMSA(Q, K11, K12, K21, K22, lambda_e_12, lambda_r_12, lambda_r_34, lambda_r_56, lambda_r_78, lambda_p_34, lambda_p_56, lambda_p_78):
     Kc = []
@@ -780,49 +819,49 @@ def KcTripteronMSA(Q, K11, K12, K21, K22, lambda_e_12, lambda_r_12, lambda_r_34,
         eq9 = np.hstack([np.zeros((6, 6*1), dtype=float), np.eye(6, dtype=float), np.eye(6, dtype=float), np.zeros((6, 6*15), dtype=float)])
 
         # Equation 10
-        eq10 = np.hstack([np.zeros((5, 6*9), dtype=float), lambda_r_12, -lambda_r_12, np.zeros((5, 6*7), dtype=float)])
+        eq10 = np.hstack([np.zeros((5, 6*9), dtype=float), lambda_r_12[i], -lambda_r_12[i], np.zeros((5, 6*7), dtype=float)])
 
         # Equation 11
         eq11 = np.hstack([np.eye(6, dtype=float), np.eye(6, dtype=float), np.zeros((6, 6*16), dtype=float)])
 
         # Equation 12
-        eq12 = np.hstack([lambda_e_12, np.zeros((6*8), dtype=float), K_active*lambda_e_12, -K_active*lambda_e_12, np.zeros((6*7), dtype=float)])
+        eq12 = np.hstack([lambda_e_12[i], np.zeros((6*8), dtype=float), K_active*lambda_e_12[i], -K_active*lambda_e_12[i], np.zeros((6*7), dtype=float)])
 
         # Equation 13
-        eq13 = np.hstack([np.zeros((5, 6*11), dtype=float), lambda_r_34, -lambda_r_34, np.zeros((5, 6*5), dtype=float)])
+        eq13 = np.hstack([np.zeros((5, 6*11), dtype=float), lambda_r_34[i], -lambda_r_34[i], np.zeros((5, 6*5), dtype=float)])
 
         # Equation 14
-        eq14 = np.hstack([np.zeros((5, 6*2), dtype=float), lambda_r_34, lambda_r_34, np.zeros((5, 6*14), dtype=float)])
+        eq14 = np.hstack([np.zeros((5, 6*2), dtype=float), lambda_r_34[i], lambda_r_34[i], np.zeros((5, 6*14), dtype=float)])
 
         # Equation 15
-        eq15 = np.hstack([np.zeros((6*2), dtype=float), lambda_p_34, np.zeros((6*15), dtype=float)])
+        eq15 = np.hstack([np.zeros((6*2), dtype=float), lambda_p_34[i], np.zeros((6*15), dtype=float)])
 
         # Equation 16
-        eq16 = np.hstack([np.zeros((6*3), dtype=float), lambda_p_34, np.zeros((6*14), dtype=float)])
+        eq16 = np.hstack([np.zeros((6*3), dtype=float), lambda_p_34[i], np.zeros((6*14), dtype=float)])
 
         # Equation 17
-        eq17 = np.hstack([np.zeros((5, 6*13), dtype=float), lambda_r_56, -lambda_r_56, np.zeros((5, 6*3), dtype=float)])
+        eq17 = np.hstack([np.zeros((5, 6*13), dtype=float), lambda_r_56[i], -lambda_r_56[i], np.zeros((5, 6*3), dtype=float)])
 
         # Equation 18
-        eq18 = np.hstack([np.zeros((5, 6*4), dtype=float), lambda_r_56, lambda_r_56, np.zeros((5, 6*12), dtype=float)])
+        eq18 = np.hstack([np.zeros((5, 6*4), dtype=float), lambda_r_56[i], lambda_r_56[i], np.zeros((5, 6*12), dtype=float)])
 
         # Equation 19
-        eq19 = np.hstack([np.zeros((6*4), dtype=float), lambda_p_56, np.zeros((6*13), dtype=float)])
+        eq19 = np.hstack([np.zeros((6*4), dtype=float), lambda_p_56[i], np.zeros((6*13), dtype=float)])
 
         # Equation 20
-        eq20 = np.hstack([np.zeros((6*5), dtype=float), lambda_p_56, np.zeros((6*12), dtype=float)])
+        eq20 = np.hstack([np.zeros((6*5), dtype=float), lambda_p_56[i], np.zeros((6*12), dtype=float)])
 
         # Equation 21
-        eq21 = np.hstack([np.zeros((5, 6*15), dtype=float), lambda_r_78, -lambda_r_78, np.zeros((5, 6*1), dtype=float)])
+        eq21 = np.hstack([np.zeros((5, 6*15), dtype=float), lambda_r_78[i], -lambda_r_78[i], np.zeros((5, 6*1), dtype=float)])
 
         # Equation 22
-        eq22 = np.hstack([np.zeros((5, 6*6), dtype=float), lambda_r_78, lambda_r_78, np.zeros((5, 6*10), dtype=float)])
+        eq22 = np.hstack([np.zeros((5, 6*6), dtype=float), lambda_r_78[i], lambda_r_78[i], np.zeros((5, 6*10), dtype=float)])
 
         # Equation 23
-        eq23 = np.hstack([np.zeros((6*6), dtype=float), lambda_p_78, np.zeros((6*11), dtype=float)])
+        eq23 = np.hstack([np.zeros((6*6), dtype=float), lambda_p_78[i], np.zeros((6*11), dtype=float)])
 
         # Equation 24
-        eq24 = np.hstack([np.zeros((6*7), dtype=float), lambda_p_34, np.zeros((6*10), dtype=float)])
+        eq24 = np.hstack([np.zeros((6*7), dtype=float), lambda_p_78[i], np.zeros((6*10), dtype=float)])
 
         # Equation 25
         eq25 = np.hstack([np.zeros((6, 6*8), dtype=float), -np.eye(6, dtype=float), np.zeros((6, 6*9), dtype=float)])
@@ -840,10 +879,6 @@ def KcTripteronMSA(Q, K11, K12, K21, K22, lambda_e_12, lambda_r_12, lambda_r_34,
     Kc = Kc[0] + Kc[1] + Kc[2]
     return Kc
 
-def dtTripteronMSA(Kc, F):
-    dt = np.linalg.inv(Kc).dot(F)
-    return dt
-
 
 
 
@@ -857,15 +892,15 @@ zScatter = np.array([])
 dScatter = np.array([])
 
 start = 0.01
-step = 10.1
-step_z = 10.1
-for z in np.arange(0.3, space_z + start, step_z):
+step = 0.1
+step_z = 0.1
+for z in np.arange(start, space_z + start, step_z):
     xData = np.array([])
     yData = np.array([])
     zData = np.array([])
     dData = np.array([])
-    for x in np.arange(0.5, space_x + start, step):
-        for y in np.arange(0.4, space_y + start, step):
+    for x in np.arange(start, space_x + start, step):
+        for y in np.arange(start, space_y + start, step):
             try:
                 print(x, y, z)
             
@@ -877,10 +912,8 @@ for z in np.arange(0.3, space_z + start, step_z):
                 Q = transformStiffness(T_base, p_global, q_passive, link)
             
                 Kc = KcTripteronMSA(Q, K11, K12, K21, K22, lambda_e_12, lambda_r_12, lambda_r_34, lambda_r_56, lambda_r_78, lambda_p_34, lambda_p_56, lambda_p_78)
-                print(Kc)
 
-                dt = dtTripteronMSA(Kc, F)
-                print(dt)
+                dt = dtTripteron(Kc, F)
                 deflection = np.sqrt(dt[0]**2 + dt[1]**2 + dt[2]**2)
                 
                 xData = np.append(xData, x)
@@ -889,7 +922,8 @@ for z in np.arange(0.3, space_z + start, step_z):
                 dData = np.append(dData, deflection)
             except (KeyboardInterrupt, SystemExit):
                 raise
-            except:
+            except Exception as error:
+                print(error)
                 pass
 
     xScatter = np.append(xScatter, xData)
@@ -897,18 +931,18 @@ for z in np.arange(0.3, space_z + start, step_z):
     zScatter = np.append(zScatter, zData)
     dScatter = np.append(dScatter, dData)
 
-    #N = int((dData.shape[0])**.5)
-    #dData = dData.reshape(N, N)
-    #cmap = 'RdGy'
-    #cmap = plt.cm.get_cmap('RdGy', 24)
+    N = int((dData.shape[0])**.5)
+    dData = dData.reshape(N, N)
 
-    #plt.imshow(dData, extent=(np.amin(xData), np.amax(xData), np.amin(yData), np.amax(yData)), cmap=cmap, interpolation='lanczos')
-    #plt.colorbar()
+    cmap = plt.cm.get_cmap('RdGy_r', 12)
+
+    plt.imshow(dData, extent=(np.amin(xData), np.amax(xData), np.amin(yData), np.amax(yData)), cmap=cmap, interpolation='lanczos')
+    plt.colorbar()
     #plt.clim(0.00018, 0.00022)
 
-    #filename = './maps/MSA_z_' + str(z)
+    filename = './maps/MSA_z_' + str(z)
     #plt.savefig(filename + '.svg', format="svg")
-    #plt.savefig(filename + '.jpg', format="jpg")
-    #plt.close()
+    plt.savefig(filename + '.jpg', format="jpg")
+    plt.close()
 
-plotDeflection(xScatter, yScatter, zScatter, dScatter, 'RdGy', 60)
+plotDeflection(xScatter, yScatter, zScatter, dScatter, 'RdGy_r', 60)
