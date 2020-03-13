@@ -1,8 +1,11 @@
 import numpy as np
-from mpl_toolkits import mplot3d
+import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
+from mpl_toolkits import mplot3d
 
+
+### Transformations ###
 
 def Rx(q):
     T = np.array([[1,         0,          0, 0],
@@ -100,6 +103,8 @@ def dTz(z):
     return T
 
 
+### Forward kinematics ###
+
 def fkLeg(T_base, T_tool, q_active, q_passive, theta, link):
     # T_base - transform from global coordinate frame to local one of the leg
     # T_tool - transform from the lask joint of the leg to the tool frame
@@ -131,6 +136,8 @@ def fkTripteron(T_base, T_tool, q_active, q_passive, theta, link):
     return T
 
 
+### Inverse kinematics ###
+
 def ikLeg(T_base, p_global, link, flag):
     # T_base - transform from global coordinate frame to local one of the leg
     R_base = T_base[0:3, 0:3]
@@ -158,74 +165,86 @@ def ikTripteron(T_base, p_global, link, flag):
     return q
 
 
-def plotTripteron(T_base, p_global, q_passive, theta, link):
-    fig = plt.figure()
-    ax = plt.axes(projection='3d')
-    ax.set_xlim3d(0, space_x)
-    ax.set_ylim3d(0, space_y)
-    ax.set_zlim3d(0, space_z)
-    ax.set_xlabel('X')
-    ax.set_ylabel('Y')
-    ax.set_zlabel('Z')
+### Beam stiffness ###
 
-    r = [0,1]
-    X, Y = np.meshgrid(r, r)
-    ones = np.ones(4).reshape(2, 2)
-    zeros = np.zeros(4).reshape(2, 2)
-    ax.plot_wireframe(X,Y,ones, alpha=0.5, color='slategray')
-    ax.plot_wireframe(X,Y,zeros, alpha=0.5, color='slategray')
-    ax.plot_wireframe(X,zeros,Y, alpha=0.5, color='slategray')
-    ax.plot_wireframe(X,ones,Y, alpha=0.5, color='slategray')
-    ax.plot_wireframe(ones,X,Y, alpha=0.5, color='slategray')
-    ax.plot_wireframe(zeros,X,Y, alpha=0.5, color='slategray')
+def elementStiffness11(E, G, d, link):
+    S = np.pi*(d**2)/4
+    Iy = np.pi*(d**4)/64
+    Iz = np.pi*(d**4)/64
+    J = Iy + Iz
+    
+    K = np.array([[E*S/link,                 0,                 0,        0,                 0,                0],
+                  [       0, 12*E*Iz/(link**3),                 0,        0,                 0, 6*E*Iz/(link**2)],
+                  [       0,                 0, 12*E*Iy/(link**3),        0, -6*E*Iy/(link**2),                0],
+                  [       0,                 0,                 0, G*J/link,                 0,                0],
+                  [       0,                 0, -6*E*Iy/(link**2),        0,       4*E*Iy/link,                0],
+                  [       0,  6*E*Iz/(link**2),                 0,        0,                 0,      4*E*Iz/link]], dtype=float)
+    
+    return K
 
+
+def elementStiffness12(E, G, d, link):
+    S = np.pi*(d**2)/4
+    Iy = np.pi*(d**4)/64
+    Iz = np.pi*(d**4)/64
+    J = Iy + Iz
+    
+    K = np.array([[-E*S/link,                 0,                 0,        0,                 0,                0],
+                  [       0, -12*E*Iz/(link**3),                 0,        0,                 0, 6*E*Iz/(link**2)],
+                  [       0,                 0, -12*E*Iy/(link**3),        0, -6*E*Iy/(link**2),                0],
+                  [       0,                 0,                 0, -G*J/link,                 0,                0],
+                  [       0,                 0, 6*E*Iy/(link**2),        0,       2*E*Iy/link,                0],
+                  [       0,  -6*E*Iz/(link**2),                 0,        0,                 0,      2*E*Iz/link]], dtype=float)
+    
+    return K
+
+
+def elementStiffness22(E, G, d, link):
+    S = np.pi*(d**2)/4
+    Iy = np.pi*(d**4)/64
+    Iz = np.pi*(d**4)/64
+    J = Iy + Iz
+    
+    K = np.array([[E*S/link,                 0,                 0,        0,                 0,                0],
+                  [       0, 12*E*Iz/(link**3),                 0,        0,                 0, -6*E*Iz/(link**2)],
+                  [       0,                 0, 12*E*Iy/(link**3),        0, 6*E*Iy/(link**2),                0],
+                  [       0,                 0,                 0, G*J/link,                 0,                0],
+                  [       0,                 0, 6*E*Iy/(link**2),        0,       4*E*Iy/link,                0],
+                  [       0, -6*E*Iz/(link**2),                 0,        0,                 0,      4*E*Iz/link]], dtype=float)
+    
+    return K
+
+
+def transformStiffness(T_base, p_global, q_passive, link):
+    Q = []
     for i in range(len(T_base)):
         q = q_passive[i]
         toOrigin = T_base[i]
-        t = theta[i]
         origin = toOrigin[0:3, 3]
 
-        toActive1 = np.linalg.multi_dot([toOrigin, # T_base transform
-                                        Tz(p_global[i]), # active joint
-                                        Tz(t[0])]) # 1 DOF virtual spring 
-        active1 = toActive1[0:3, 3]
+        toLink1 = np.linalg.multi_dot([toOrigin, # T_base transform
+                                       Tz(p_global[i]), # active joint
+                                       Rz(q[0])]) # passive joint
+        rotationLink1 = toLink1[0:3, 0:3]
 
-        toPassive1 = np.linalg.multi_dot([toActive1, # transfrom to the active joint
-                                          Rz(q[0])]) # passive joint
-        passive1 = toPassive1[0:3, 3]
+        toLink2 = np.linalg.multi_dot([toLink1, # transform to the passive joint
+                                       Tx(link[0]), # rigid link
+                                       Rz(q[1])]) # passive joint
+        rotationLink2 = toLink2[0:3, 0:3]
 
-        toPassive2 = np.linalg.multi_dot([toPassive1, # transform to the passive joint
-                                          Tx(link[0]), # rigid link
-                                          Tx(t[1]), Ty(t[2]), Tz(t[3]), Rx(t[4]), Ry(t[5]), Rz(t[6]), # 6 DOF virtual spring
-                                          Rz(q[1])]) # passive joint
-        passive2 = toPassive2[0:3, 3]
+        zeros = np.zeros((3,3), dtype=float)
 
-        toPassive3 = np.linalg.multi_dot([toPassive2, # transform to the passive joint
-                                          Tx(link[1]), # rigid link
-                                          Tx(t[7]), Ty(t[8]), Tz(t[9]), Rx(t[10]), Ry(t[11]), Rz(t[12]), # 6 DOF virtual spring
-                                          Rz(q[2])]) # passive joint
-        passive3 = toPassive3[0:3, 3]
+        Q1 = np.vstack([np.hstack([rotationLink1,         zeros]),
+                        np.hstack([        zeros, rotationLink1])])
 
-        leg = [[], [], []]
-        active = [[], [], []]
+        Q2 = np.vstack([np.hstack([rotationLink2,         zeros]),
+                        np.hstack([        zeros, rotationLink2])])
 
-        for i in range(len(leg)):
-            active[i].append(origin[i])
-            active[i].append(active1[i])
-            leg[i].append(active1[i])
-            leg[i].append(passive1[i])
-            leg[i].append(passive2[i])
-            leg[i].append(passive3[i])
+        Q.append([Q1, Q2])
+    return Q
 
-        ax.plot3D(active[0], active[1], active[2], c='navy', linewidth=5)
-        ax.plot3D(leg[0], leg[1], leg[2], c='steelblue', linewidth=3)
 
-    point = []
-    for i in range(len(T_base)):
-        point.append(p_global[i])
-    ax.scatter3D(point[0], point[1], point[2], c='red', s=10)
-    plt.show()
-
+### VJM section ###
 
 def JacobianPassiveLeg(T_fk, T_base, T_tool, q_active, q_passive, theta, link):
     T_fk[0:3, 3] = 0
@@ -285,6 +304,7 @@ def JacobianPassiveTripteron(T_base, T_tool, q_active, q_passive, theta, link):
         J = JacobianPassiveLeg(T_fk[leg], T_base[leg], T_tool[leg], q_active[leg], q_passive[leg], theta[leg], link)
         Jq.append(J)
     return Jq
+
 
 def JacobianThetaLeg(T_fk, T_base, T_tool, q_active, q_passive, theta, link):
     T_fk[0:3, 3] = 0
@@ -486,51 +506,6 @@ def JacobianThetaTripteron(T_base, T_tool, q_active, q_passive, theta, link):
     return Jtheta
 
 
-def elementStiffness11(E, G, d, link):
-    S = np.pi*(d**2)/4
-    Iy = np.pi*(d**4)/64
-    Iz = np.pi*(d**4)/64
-    J = Iy + Iz
-    
-    K = np.array([[E*S/link,                 0,                 0,        0,                 0,                0],
-                  [       0, 12*E*Iz/(link**3),                 0,        0,                 0, 6*E*Iz/(link**2)],
-                  [       0,                 0, 12*E*Iy/(link**3),        0, -6*E*Iy/(link**2),                0],
-                  [       0,                 0,                 0, G*J/link,                 0,                0],
-                  [       0,                 0, -6*E*Iy/(link**2),        0,       4*E*Iy/link,                0],
-                  [       0,  6*E*Iz/(link**2),                 0,        0,                 0,      4*E*Iz/link]], dtype=float)
-    
-    return K
-
-def elementStiffness12(E, G, d, link):
-    S = np.pi*(d**2)/4
-    Iy = np.pi*(d**4)/64
-    Iz = np.pi*(d**4)/64
-    J = Iy + Iz
-    
-    K = np.array([[-E*S/link,                 0,                 0,        0,                 0,                0],
-                  [       0, -12*E*Iz/(link**3),                 0,        0,                 0, 6*E*Iz/(link**2)],
-                  [       0,                 0, -12*E*Iy/(link**3),        0, -6*E*Iy/(link**2),                0],
-                  [       0,                 0,                 0, -G*J/link,                 0,                0],
-                  [       0,                 0, 6*E*Iy/(link**2),        0,       2*E*Iy/link,                0],
-                  [       0,  -6*E*Iz/(link**2),                 0,        0,                 0,      2*E*Iz/link]], dtype=float)
-    
-    return K
-
-def elementStiffness22(E, G, d, link):
-    S = np.pi*(d**2)/4
-    Iy = np.pi*(d**4)/64
-    Iz = np.pi*(d**4)/64
-    J = Iy + Iz
-    
-    K = np.array([[E*S/link,                 0,                 0,        0,                 0,                0],
-                  [       0, 12*E*Iz/(link**3),                 0,        0,                 0, -6*E*Iz/(link**2)],
-                  [       0,                 0, 12*E*Iy/(link**3),        0, 6*E*Iy/(link**2),                0],
-                  [       0,                 0,                 0, G*J/link,                 0,                0],
-                  [       0,                 0, 6*E*Iy/(link**2),        0,       4*E*Iy/link,                0],
-                  [       0, -6*E*Iz/(link**2),                 0,        0,                 0,      4*E*Iz/link]], dtype=float)
-    
-    return K
-
 def KThetaLeg(K_active, E, G, d, link):
     K0 = np.zeros(13, dtype=float)
     K0[0] = K_active
@@ -559,237 +534,7 @@ def KcTripteronVJM(Ktheta, Jq, Jtheta):
     return Kc_total
 
 
-def dtTripteron(Kc, F):
-    dt = np.linalg.inv(Kc).dot(F)
-    return dt
-
-def plotDeflection(x, y, z, deflection, cmap, s):
-    fig = plt.figure()
-    ax = plt.axes(projection='3d')
-    ax.set_xlim3d(0, space_x)
-    ax.set_ylim3d(0, space_y)
-    ax.set_zlim3d(0, space_z)
-    ax.set_xlabel('X')
-    ax.set_ylabel('Y')
-    ax.set_zlabel('Z')
-
-    r = [0,1]
-    X, Y = np.meshgrid(r, r)
-    ones = np.ones(4).reshape(2, 2)
-    zeros = np.zeros(4).reshape(2, 2)
-    ax.plot_wireframe(X,Y,ones, alpha=0.5, color='slategray')
-    ax.plot_wireframe(X,Y,zeros, alpha=0.5, color='slategray')
-    ax.plot_wireframe(X,zeros,Y, alpha=0.5, color='slategray')
-    ax.plot_wireframe(X,ones,Y, alpha=0.5, color='slategray')
-    ax.plot_wireframe(ones,X,Y, alpha=0.5, color='slategray')
-    ax.plot_wireframe(zeros,X,Y, alpha=0.5, color='slategray')
-
-    
-    cmap = ax.scatter3D(x, y, z, c=deflection, cmap=cmap, s=s)
-    #cmap.set_clim(0.0011, 0.0014)
-    plt.colorbar(cmap)
-    plt.show()
-
-def plotTripteronWithDeflection(T_base, p_global, q_passive, theta, link, x, y, z, deflection, cmap, s):
-    fig = plt.figure()
-    ax = plt.axes(projection='3d')
-    ax.set_xlim3d(0, space_x)
-    ax.set_ylim3d(0, space_y)
-    ax.set_zlim3d(0, space_z)
-    ax.set_xlabel('X')
-    ax.set_ylabel('Y')
-    ax.set_zlabel('Z')
-
-    r = [0,1]
-    X, Y = np.meshgrid(r, r)
-    ones = np.ones(4).reshape(2, 2)
-    zeros = np.zeros(4).reshape(2, 2)
-    ax.plot_wireframe(X,Y,ones, alpha=0.5, color='slategray')
-    ax.plot_wireframe(X,Y,zeros, alpha=0.5, color='slategray')
-    ax.plot_wireframe(X,zeros,Y, alpha=0.5, color='slategray')
-    ax.plot_wireframe(X,ones,Y, alpha=0.5, color='slategray')
-    ax.plot_wireframe(ones,X,Y, alpha=0.5, color='slategray')
-    ax.plot_wireframe(zeros,X,Y, alpha=0.5, color='slategray')
-
-    for i in range(len(T_base)):
-        q = q_passive[i]
-        toOrigin = T_base[i]
-        t = theta[i]
-        origin = toOrigin[0:3, 3]
-
-        toActive1 = np.linalg.multi_dot([toOrigin, # T_base transform
-                                        Tz(p_global[i]), # active joint
-                                        Tz(t[0])]) # 1 DOF virtual spring 
-        active1 = toActive1[0:3, 3]
-
-        toPassive1 = np.linalg.multi_dot([toActive1, # transfrom to the active joint
-                                          Rz(q[0])]) # passive joint
-        passive1 = toPassive1[0:3, 3]
-
-        toPassive2 = np.linalg.multi_dot([toPassive1, # transform to the passive joint
-                                          Tx(link[0]), # rigid link
-                                          Tx(t[1]), Ty(t[2]), Tz(t[3]), Rx(t[4]), Ry(t[5]), Rz(t[6]), # 6 DOF virtual spring
-                                          Rz(q[1])]) # passive joint
-        passive2 = toPassive2[0:3, 3]
-
-        toPassive3 = np.linalg.multi_dot([toPassive2, # transform to the passive joint
-                                          Tx(link[1]), # rigid link
-                                          Tx(t[7]), Ty(t[8]), Tz(t[9]), Rx(t[10]), Ry(t[11]), Rz(t[12]), # 6 DOF virtual spring
-                                          Rz(q[2])]) # passive joint
-        passive3 = toPassive3[0:3, 3]
-
-        leg = [[], [], []]
-        active = [[], [], []]
-
-        for i in range(len(leg)):
-            active[i].append(origin[i])
-            active[i].append(active1[i])
-            leg[i].append(active1[i])
-            leg[i].append(passive1[i])
-            leg[i].append(passive2[i])
-            leg[i].append(passive3[i])
-
-        ax.plot3D(active[0], active[1], active[2], c='navy', linewidth=5)
-        ax.plot3D(leg[0], leg[1], leg[2], c='steelblue', linewidth=3)
-
-    # Plot deflection
-    cmap = ax.scatter3D(x, y, z, c=deflection, cmap=cmap, s=s)
-    #cmap.set_clim(0.0011, 0.0014)
-    plt.colorbar(cmap)
-    plt.show()
-
-
-space_x = space_y = space_z = 1.0 # workspace size
-link = np.array([0.75, 0.75], dtype=float) # links length
-d = np.array([0.15, 0.15], dtype=float) # links diameter
-
-T_base_z = np.eye(4, dtype=float) # since the global coordinate frame coinside with the local frame of the origin of the leg Z
-T_base_y = np.linalg.multi_dot([Tz(space_z), Rx(-np.pi/2)])
-T_base_x = np.linalg.multi_dot([Ty(space_y), Ry(np.pi/2), Rz(np.pi)])
-T_base = [T_base_x, T_base_y, T_base_z]
-
-T_tool_z = np.eye(4, dtype=float)
-T_tool_y = np.transpose(Rx(-np.pi/2))
-T_tool_x = np.transpose(np.linalg.multi_dot([Ry(np.pi/2), Rz(np.pi)]))
-T_tool = [T_tool_x, T_tool_y, T_tool_z]
-
-theta = np.zeros(13, dtype=float)
-theta = [theta, theta, theta]
-
-flag = 1 # '+1' elbow-down or '-1' elbow-up
-
-K_active = 1000000 # actuator stiffness
-E = 7.0000e+10 # Young's modulus
-G = 2.5500e+10 # shear modulus
-Ktheta = KThetaLeg(K_active, E, G, d, link)
-Ktheta = [Ktheta, Ktheta, Ktheta]
-F = np.array([[1000], [0], [0], [0], [0], [0]], dtype=float)
-
-
-xScatter = np.array([])
-yScatter = np.array([])
-zScatter = np.array([])
-dScatter = np.array([])
-
-start = 0.01
-step = 0.1
-step_z = 0.1
-for z in np.arange(start, space_z + start, step_z):
-    xData = np.array([])
-    yData = np.array([])
-    zData = np.array([])
-    dData = np.array([])
-    for x in np.arange(start, space_x + start, step):
-        for y in np.arange(start, space_y + start, step):
-            try:
-                print(x, y, z)
-            
-                p_global = np.array([x, y, z], dtype=float)
-                q_active = [[p_global[0]],[p_global[1]],[p_global[2]]]
-                q_passive = ikTripteron(T_base, p_global, link, flag)
-                #plotTripteron(T_base, p_global, q_passive, theta, link)
-                
-                Jq = JacobianPassiveTripteron(T_base, T_tool, q_active, q_passive, theta, link)
-                Jtheta = JacobianThetaTripteron(T_base, T_tool, q_active, q_passive, theta, link)
-
-                Kc = KcTripteronVJM(Ktheta, Jq, Jtheta)
-
-                dt = dtTripteron(Kc, F)
-                deflection = np.sqrt(dt[0]**2 + dt[1]**2 + dt[2]**2)
-                
-                xData = np.append(xData, x)
-                yData = np.append(yData, y)
-                zData = np.append(zData, z)
-                dData = np.append(dData, deflection)
-            except (KeyboardInterrupt, SystemExit):
-                raise
-            except Exception as error:
-                print(error)
-                pass
-
-    xScatter = np.append(xScatter, xData)
-    yScatter = np.append(yScatter, yData)
-    zScatter = np.append(zScatter, zData)
-    dScatter = np.append(dScatter, dData)
-
-    N = int((dData.shape[0])**.5)
-    dData = dData.reshape(N, N)
-    
-    cmap = plt.cm.get_cmap('RdGy_r', 12)
-    plt.imshow(dData, extent=(np.amin(xData), np.amax(xData), np.amin(yData), np.amax(yData)), cmap=cmap, interpolation='lanczos')
-    plt.colorbar()
-    #plt.clim(0.0011, 0.0014)
-
-    filename = './maps/VJM_z_' + str(z)
-    plt.savefig(filename + '.svg', format="svg")
-    #plt.savefig(filename + '.jpg', format="jpg")
-    #plt.savefig(filename + '.eps', format="eps")
-    plt.close()
-
-cmap = plt.cm.get_cmap('RdGy_r', 12)
-plotDeflection(xScatter, yScatter, zScatter, dScatter, cmap, 60)
-
-# Plot tripteron with the deflections
-p_global = np.array([0.5, 0.5, 0.5], dtype=float)
-q_passive = ikTripteron(T_base, p_global, link, flag)
-plotTripteronWithDeflection(T_base, p_global, q_passive, theta, link, xScatter, yScatter, zScatter, dScatter, cmap, 60)
-
-
-def transformStiffness(T_base, p_global, q_passive, link):
-    Q = []
-    for i in range(len(T_base)):
-        q = q_passive[i]
-        toOrigin = T_base[i]
-        origin = toOrigin[0:3, 3]
-
-        toLink1 = np.linalg.multi_dot([toOrigin, # T_base transform
-                                       Tz(p_global[i]), # active joint
-                                       Rz(q[0])]) # passive joint
-        rotationLink1 = toLink1[0:3, 0:3]
-
-        toLink2 = np.linalg.multi_dot([toLink1, # transform to the passive joint
-                                       Tx(link[0]), # rigid link
-                                       Rz(q[1])]) # passive joint
-        rotationLink2 = toLink2[0:3, 0:3]
-
-        zeros = np.zeros((3,3), dtype=float)
-
-        Q1 = np.vstack([np.hstack([rotationLink1,         zeros]),
-                        np.hstack([        zeros, rotationLink1])])
-
-        Q2 = np.vstack([np.hstack([rotationLink2,         zeros]),
-                        np.hstack([        zeros, rotationLink2])])
-
-        Q.append([Q1, Q2])
-    return Q
-
-K11 = elementStiffness11(E, G, d[0], link[0])
-K12 = elementStiffness12(E, G, d[0], link[0])
-K21 = np.transpose(K12)
-K22 = elementStiffness22(E, G, d[0], link[0])
-
-#!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-np.set_printoptions(precision=2, suppress=True, linewidth=200)
+### MSA section ###
 
 lambda_r_12_x = np.array([[0, 1, 0, 0, 0, 0],
                           [0, 0, 1, 0, 0, 0],
@@ -797,15 +542,11 @@ lambda_r_12_x = np.array([[0, 1, 0, 0, 0, 0],
                           [0, 0, 0, 0, 1, 0],
                           [0, 0, 0, 0, 0, 1]], dtype=float)
 
-lambda_e_12_x = np.array([1, 0, 0, 0, 0, 0], dtype=float)
-
 lambda_r_12_y = np.array([[1, 0, 0, 0, 0, 0],
                           [0, 0, 1, 0, 0, 0],
                           [0, 0, 0, 1, 0, 0],
                           [0, 0, 0, 0, 1, 0],
                           [0, 0, 0, 0, 0, 1]], dtype=float)
-
-lambda_e_12_y = np.array([0, 1, 0, 0, 0, 0], dtype=float)
 
 lambda_r_12_z = np.array([[1, 0, 0, 0, 0, 0],
                           [0, 1, 0, 0, 0, 0],
@@ -813,10 +554,15 @@ lambda_r_12_z = np.array([[1, 0, 0, 0, 0, 0],
                           [0, 0, 0, 0, 1, 0],
                           [0, 0, 0, 0, 0, 1]], dtype=float)
 
+lambda_r_12 = [lambda_r_12_x, lambda_r_12_y, lambda_r_12_z]
+
+
+lambda_e_12_x = np.array([1, 0, 0, 0, 0, 0], dtype=float)
+lambda_e_12_y = np.array([0, 1, 0, 0, 0, 0], dtype=float)
 lambda_e_12_z = np.array([0, 0, 1, 0, 0, 0], dtype=float)
 
-lambda_r_12 = [lambda_r_12_x, lambda_r_12_y, lambda_r_12_z]
 lambda_e_12 = [lambda_e_12_x, lambda_e_12_y, lambda_e_12_z]
+
 
 lambda_r_34_x = lambda_r_56_x = lambda_r_78_x  = np.array([[1, 0, 0, 0, 0, 0],
                                                            [0, 1, 0, 0, 0, 0],
@@ -824,15 +570,11 @@ lambda_r_34_x = lambda_r_56_x = lambda_r_78_x  = np.array([[1, 0, 0, 0, 0, 0],
                                                            [0, 0, 0, 0, 1, 0],
                                                            [0, 0, 0, 0, 0, 1]], dtype=float)
 
-lambda_p_34_x = lambda_p_56_x = lambda_p_78_x = np.array([0, 0, 0, 1, 0, 0], dtype=float)
-
 lambda_r_34_y = lambda_r_56_y = lambda_r_78_y  = np.array([[1, 0, 0, 0, 0, 0],
                                                            [0, 1, 0, 0, 0, 0],
                                                            [0, 0, 1, 0, 0, 0],
                                                            [0, 0, 0, 1, 0, 0],
                                                            [0, 0, 0, 0, 0, 1]], dtype=float)
-
-lambda_p_34_y = lambda_p_56_y = lambda_p_78_y = np.array([0, 0, 0, 0, 1, 0], dtype=float)
 
 lambda_r_34_z = lambda_r_56_z = lambda_r_78_z  = np.array([[1, 0, 0, 0, 0, 0],
                                                            [0, 1, 0, 0, 0, 0],
@@ -840,17 +582,20 @@ lambda_r_34_z = lambda_r_56_z = lambda_r_78_z  = np.array([[1, 0, 0, 0, 0, 0],
                                                            [0, 0, 0, 1, 0, 0],
                                                            [0, 0, 0, 0, 1, 0]], dtype=float)
 
-lambda_p_34_z = lambda_p_56_z = lambda_p_78_z = np.array([0, 0, 0, 0, 0, 1], dtype=float)
-
 lambda_r_34 = [lambda_r_34_x, lambda_r_34_y, lambda_r_34_z]
 lambda_r_56 = [lambda_r_56_x, lambda_r_56_y, lambda_r_56_z]
 lambda_r_78 = [lambda_r_78_x, lambda_r_78_y, lambda_r_78_z]
+
+
+lambda_p_34_x = lambda_p_56_x = lambda_p_78_x = np.array([0, 0, 0, 1, 0, 0], dtype=float)
+lambda_p_34_y = lambda_p_56_y = lambda_p_78_y = np.array([0, 0, 0, 0, 1, 0], dtype=float)
+lambda_p_34_z = lambda_p_56_z = lambda_p_78_z = np.array([0, 0, 0, 0, 0, 1], dtype=float)
 
 lambda_p_34 = [lambda_p_34_x, lambda_p_34_y, lambda_p_34_z]
 lambda_p_56 = [lambda_p_56_x, lambda_p_56_y, lambda_p_56_z]
 lambda_p_78 = [lambda_p_78_x, lambda_p_78_y, lambda_p_78_z]
 
-def KcTripteronMSA(Q, K11, K12, K21, K22, lambda_e_12, lambda_r_12, lambda_r_34, lambda_r_56, lambda_r_78, lambda_p_34, lambda_p_56, lambda_p_78):
+def KcTripteronMSA(Q, K_active, K11, K12, K21, K22, lambda_e_12, lambda_r_12, lambda_r_34, lambda_r_56, lambda_r_78, lambda_p_34, lambda_p_56, lambda_p_78):
     Kc = []
     for i in range(len(Q)):
         # Equation 1
@@ -954,75 +699,419 @@ def KcTripteronMSA(Q, K11, K12, K21, K22, lambda_e_12, lambda_r_12, lambda_r_34,
     return Kc
 
 
+### Deflection ###
+
+def dtTripteron(Kc, F):
+    dt = np.linalg.inv(Kc).dot(F)
+    return dt
 
 
+### Plotting ###
+
+def plotTripteron(space, T_base, p_global, q_passive, theta, link):
+    fig = plt.figure()
+    ax = plt.axes(projection='3d')
+    ax.set_xlim3d(0, space[0])
+    ax.set_ylim3d(0, space[1])
+    ax.set_zlim3d(0, space[2])
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+    ax.set_zlabel('Z')
+
+    r = [0,1]
+    X, Y = np.meshgrid(r, r)
+    ones = np.ones(4).reshape(2, 2)
+    zeros = np.zeros(4).reshape(2, 2)
+    ax.plot_wireframe(X,Y,ones, alpha=0.5, color='slategray')
+    ax.plot_wireframe(X,Y,zeros, alpha=0.5, color='slategray')
+    ax.plot_wireframe(X,zeros,Y, alpha=0.5, color='slategray')
+    ax.plot_wireframe(X,ones,Y, alpha=0.5, color='slategray')
+    ax.plot_wireframe(ones,X,Y, alpha=0.5, color='slategray')
+    ax.plot_wireframe(zeros,X,Y, alpha=0.5, color='slategray')
+
+    for i in range(len(T_base)):
+        q = q_passive[i]
+        toOrigin = T_base[i]
+        t = theta[i]
+        origin = toOrigin[0:3, 3]
+
+        toActive1 = np.linalg.multi_dot([toOrigin, # T_base transform
+                                        Tz(p_global[i]), # active joint
+                                        Tz(t[0])]) # 1 DOF virtual spring 
+        active1 = toActive1[0:3, 3]
+
+        toPassive1 = np.linalg.multi_dot([toActive1, # transfrom to the active joint
+                                          Rz(q[0])]) # passive joint
+        passive1 = toPassive1[0:3, 3]
+
+        toPassive2 = np.linalg.multi_dot([toPassive1, # transform to the passive joint
+                                          Tx(link[0]), # rigid link
+                                          Tx(t[1]), Ty(t[2]), Tz(t[3]), Rx(t[4]), Ry(t[5]), Rz(t[6]), # 6 DOF virtual spring
+                                          Rz(q[1])]) # passive joint
+        passive2 = toPassive2[0:3, 3]
+
+        toPassive3 = np.linalg.multi_dot([toPassive2, # transform to the passive joint
+                                          Tx(link[1]), # rigid link
+                                          Tx(t[7]), Ty(t[8]), Tz(t[9]), Rx(t[10]), Ry(t[11]), Rz(t[12]), # 6 DOF virtual spring
+                                          Rz(q[2])]) # passive joint
+        passive3 = toPassive3[0:3, 3]
+
+        leg = [[], [], []]
+        active = [[], [], []]
+
+        for i in range(len(leg)):
+            active[i].append(origin[i])
+            active[i].append(active1[i])
+            leg[i].append(active1[i])
+            leg[i].append(passive1[i])
+            leg[i].append(passive2[i])
+            leg[i].append(passive3[i])
+
+        ax.plot3D(active[0], active[1], active[2], c='navy', linewidth=5)
+        ax.plot3D(leg[0], leg[1], leg[2], c='steelblue', linewidth=3)
+
+    point = []
+    for i in range(len(T_base)):
+        point.append(p_global[i])
+    ax.scatter3D(point[0], point[1], point[2], c='red', s=10)
+    plt.show()
 
 
+def plotDeflection(x, y, z, deflection, cmap, s, limit):
+    fig = plt.figure()
+    ax = plt.axes(projection='3d')
+    ax.set_xlim3d(0, space_x)
+    ax.set_ylim3d(0, space_y)
+    ax.set_zlim3d(0, space_z)
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+    ax.set_zlabel('Z')
+
+    r = [0,1]
+    X, Y = np.meshgrid(r, r)
+    ones = np.ones(4).reshape(2, 2)
+    zeros = np.zeros(4).reshape(2, 2)
+    ax.plot_wireframe(X,Y,ones, alpha=0.5, color='slategray')
+    ax.plot_wireframe(X,Y,zeros, alpha=0.5, color='slategray')
+    ax.plot_wireframe(X,zeros,Y, alpha=0.5, color='slategray')
+    ax.plot_wireframe(X,ones,Y, alpha=0.5, color='slategray')
+    ax.plot_wireframe(ones,X,Y, alpha=0.5, color='slategray')
+    ax.plot_wireframe(zeros,X,Y, alpha=0.5, color='slategray')
+
+    
+    cmap = ax.scatter3D(x, y, z, c=deflection, cmap=cmap, s=s)
+
+    if limit[0] == True:
+        cmap.set_clim(limit[1], limit[2])
+        
+    plt.colorbar(cmap)
+    plt.show()
 
 
-xScatter = np.array([])
-yScatter = np.array([])
-zScatter = np.array([])
-dScatter = np.array([])
+def plotTripteronWithDeflection(space, T_base, p_global, q_passive, theta, link, x, y, z, deflection, cmap, s, limit):
+    fig = plt.figure()
+    ax = plt.axes(projection='3d')
+    ax.set_xlim3d(0, space[0])
+    ax.set_ylim3d(0, space[1])
+    ax.set_zlim3d(0, space[2])
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+    ax.set_zlabel('Z')
 
-start = 0.01
-step = 0.1
-step_z = 0.1
-for z in np.arange(start, space_z + start, step_z):
-    xData = np.array([])
-    yData = np.array([])
-    zData = np.array([])
-    dData = np.array([])
-    for x in np.arange(start, space_x + start, step):
-        for y in np.arange(start, space_y + start, step):
-            try:
-                print(x, y, z)
-            
-                p_global = np.array([x, y, z], dtype=float)
+    r = [0,1]
+    X, Y = np.meshgrid(r, r)
+    ones = np.ones(4).reshape(2, 2)
+    zeros = np.zeros(4).reshape(2, 2)
+    ax.plot_wireframe(X,Y,ones, alpha=0.5, color='slategray')
+    ax.plot_wireframe(X,Y,zeros, alpha=0.5, color='slategray')
+    ax.plot_wireframe(X,zeros,Y, alpha=0.5, color='slategray')
+    ax.plot_wireframe(X,ones,Y, alpha=0.5, color='slategray')
+    ax.plot_wireframe(ones,X,Y, alpha=0.5, color='slategray')
+    ax.plot_wireframe(zeros,X,Y, alpha=0.5, color='slategray')
 
-                q_passive = ikTripteron(T_base, p_global, link, flag)
-                #plotTripteron(T_base, p_global, q_passive, theta, link)
+    for i in range(len(T_base)):
+        q = q_passive[i]
+        toOrigin = T_base[i]
+        t = theta[i]
+        origin = toOrigin[0:3, 3]
 
-                Q = transformStiffness(T_base, p_global, q_passive, link)
-            
-                Kc = KcTripteronMSA(Q, K11, K12, K21, K22, lambda_e_12, lambda_r_12, lambda_r_34, lambda_r_56, lambda_r_78, lambda_p_34, lambda_p_56, lambda_p_78)
+        toActive1 = np.linalg.multi_dot([toOrigin, # T_base transform
+                                        Tz(p_global[i]), # active joint
+                                        Tz(t[0])]) # 1 DOF virtual spring 
+        active1 = toActive1[0:3, 3]
 
-                dt = dtTripteron(Kc, F)
-                deflection = np.sqrt(dt[0]**2 + dt[1]**2 + dt[2]**2)
-                
-                xData = np.append(xData, x)
-                yData = np.append(yData, y)
-                zData = np.append(zData, z)
-                dData = np.append(dData, deflection)
-            except (KeyboardInterrupt, SystemExit):
-                raise
-            except Exception as error:
-                print(error)
-                pass
+        toPassive1 = np.linalg.multi_dot([toActive1, # transfrom to the active joint
+                                          Rz(q[0])]) # passive joint
+        passive1 = toPassive1[0:3, 3]
 
-    xScatter = np.append(xScatter, xData)
-    yScatter = np.append(yScatter, yData)
-    zScatter = np.append(zScatter, zData)
-    dScatter = np.append(dScatter, dData)
+        toPassive2 = np.linalg.multi_dot([toPassive1, # transform to the passive joint
+                                          Tx(link[0]), # rigid link
+                                          Tx(t[1]), Ty(t[2]), Tz(t[3]), Rx(t[4]), Ry(t[5]), Rz(t[6]), # 6 DOF virtual spring
+                                          Rz(q[1])]) # passive joint
+        passive2 = toPassive2[0:3, 3]
 
-    N = int((dData.shape[0])**.5)
-    dData = dData.reshape(N, N)
+        toPassive3 = np.linalg.multi_dot([toPassive2, # transform to the passive joint
+                                          Tx(link[1]), # rigid link
+                                          Tx(t[7]), Ty(t[8]), Tz(t[9]), Rx(t[10]), Ry(t[11]), Rz(t[12]), # 6 DOF virtual spring
+                                          Rz(q[2])]) # passive joint
+        passive3 = toPassive3[0:3, 3]
 
+        leg = [[], [], []]
+        active = [[], [], []]
+
+        for i in range(len(leg)):
+            active[i].append(origin[i])
+            active[i].append(active1[i])
+            leg[i].append(active1[i])
+            leg[i].append(passive1[i])
+            leg[i].append(passive2[i])
+            leg[i].append(passive3[i])
+
+        ax.plot3D(active[0], active[1], active[2], c='navy', linewidth=5)
+        ax.plot3D(leg[0], leg[1], leg[2], c='steelblue', linewidth=3)
+
+    # Plot deflection
+    cmap = ax.scatter3D(x, y, z, c=deflection, cmap=cmap, s=s)
+    if limit[0] == True:
+        cmap.set_clim(limit[1], limit[2])
+    plt.colorbar(cmap)
+    plt.show()
+
+
+if __name__ == "__main__":
+    space_x = space_y = space_z = 1.0 # workspace size
+    space = [space_x, space_y, space_z]
+    link = np.array([0.75, 0.75], dtype=float) # links length
+    d = np.array([0.15, 0.15], dtype=float) # links diameter
+
+    T_base_z = np.eye(4, dtype=float) # since the global coordinate frame coinside with the local frame of the origin of the leg Z
+    T_base_y = np.linalg.multi_dot([Tz(space_z), Rx(-np.pi/2)])
+    T_base_x = np.linalg.multi_dot([Ty(space_y), Ry(np.pi/2), Rz(np.pi)])
+    T_base = [T_base_x, T_base_y, T_base_z]
+
+    T_tool_z = np.eye(4, dtype=float)
+    T_tool_y = np.transpose(Rx(-np.pi/2))
+    T_tool_x = np.transpose(np.linalg.multi_dot([Ry(np.pi/2), Rz(np.pi)]))
+    T_tool = [T_tool_x, T_tool_y, T_tool_z]
+
+    theta = np.zeros(13, dtype=float)
+    theta = [theta, theta, theta]
+
+    flag = 1 # '+1' elbow-down or '-1' elbow-up
+
+    K_active = 1000000 # actuator stiffness
+    E = 7.0000e+10 # Young's modulus
+    G = 2.5500e+10 # shear modulus
+
+    # VJM parameters
+    Ktheta = KThetaLeg(K_active, E, G, d, link)
+    Ktheta = [Ktheta, Ktheta, Ktheta]
+
+    # MSA parameters
+    K11 = elementStiffness11(E, G, d[0], link[0])
+    K12 = elementStiffness12(E, G, d[0], link[0])
+    K21 = np.transpose(K12)
+    K22 = elementStiffness22(E, G, d[0], link[0])
+
+    # Applied force
+    F = np.array([[0], [0], [1000], [0], [0], [0]], dtype=float)
+
+    method = 'MSA'
+
+    xScatter = np.array([])
+    yScatter = np.array([])
+    zScatter = np.array([])
+    dScatter = np.array([])
+    
     cmap = plt.cm.get_cmap('RdGy_r', 12)
-    plt.imshow(dData, extent=(np.amin(xData), np.amax(xData), np.amin(yData), np.amax(yData)), cmap=cmap, interpolation='lanczos')
-    plt.colorbar()
-    #plt.clim(0.0011, 0.0014)
+    #cmap = 'RdGy_r'
+    limit = [True, 0.0011, 0.0014]
 
-    filename = './maps/MSA_z_' + str(z)
-    plt.savefig(filename + '.svg', format="svg")
-    #plt.savefig(filename + '.jpg', format="jpg")
-    #plt.savefig(filename + '.eps', format="eps")
-    plt.close()
+    """ start = 0.01
+    step = 0.1
+    step_z = 0.1
+    for z in np.arange(start, space_z + start, step_z):
+        xData = np.array([])
+        yData = np.array([])
+        zData = np.array([])
+        dData = np.array([])
+        for x in np.arange(start, space_x + start, step):
+            for y in np.arange(start, space_y + start, step):
+                try:
+                    p_global = np.array([x, y, z], dtype=float)
+                    q_active = [[p_global[0]],[p_global[1]],[p_global[2]]]
+                    q_passive = ikTripteron(T_base, p_global, link, flag)
+                    #plotTripteron(space, T_base, p_global, q_passive, theta, link)
+                    
+                    if method == 'VJM':
+                        Jq = JacobianPassiveTripteron(T_base, T_tool, q_active, q_passive, theta, link)
+                        Jtheta = JacobianThetaTripteron(T_base, T_tool, q_active, q_passive, theta, link)
+                        Kc = KcTripteronVJM(Ktheta, Jq, Jtheta)
+                    elif method == 'MSA':
+                        Q = transformStiffness(T_base, p_global, q_passive, link)
+                        Kc = KcTripteronMSA(Q, K_active, K11, K12, K21, K22, lambda_e_12, lambda_r_12, lambda_r_34, lambda_r_56, lambda_r_78, lambda_p_34, lambda_p_56, lambda_p_78)
 
-cmap = plt.cm.get_cmap('RdGy_r', 12)
-plotDeflection(xScatter, yScatter, zScatter, dScatter, cmap, 60)
+                    dt = dtTripteron(Kc, F)
+                    deflection = np.sqrt(dt[0]**2 + dt[1]**2 + dt[2]**2)
+                    
+                    xData = np.append(xData, x)
+                    yData = np.append(yData, y)
+                    zData = np.append(zData, z)
+                    dData = np.append(dData, deflection)
+                except (KeyboardInterrupt, SystemExit):
+                    raise
+                except Exception as error:
+                    print(error)
+                    pass
 
-# Plot tripteron with the deflections
-p_global = np.array([0.5, 0.5, 0.5], dtype=float)
-q_passive = ikTripteron(T_base, p_global, link, flag)
-plotTripteronWithDeflection(T_base, p_global, q_passive, theta, link, xScatter, yScatter, zScatter, dScatter, cmap, 60)
+        xScatter = np.append(xScatter, xData)
+        yScatter = np.append(yScatter, yData)
+        zScatter = np.append(zScatter, zData)
+        dScatter = np.append(dScatter, dData)
+
+        N = int((dData.shape[0])**.5)
+        dData = dData.reshape(N, N)
+        
+        plt.imshow(dData, extent=(np.amin(xData), np.amax(xData), np.amin(yData), np.amax(yData)), cmap=cmap, interpolation='lanczos')
+        plt.colorbar()
+        if limit[0] == True:
+            plt.clim(limit[1], limit[2])
+
+        filename = './maps/' + method + '_z_' + str(round(z,2))
+        plt.savefig(filename + '.svg', format="svg")
+        #plt.savefig(filename + '.jpg', format="jpg")
+        #plt.savefig(filename + '.eps', format="eps")
+        plt.close()
+
+    #print('Range: ', np.min(dScatter), np.max(dScatter))
+
+    plotDeflection(xScatter, yScatter, zScatter, dScatter, cmap, 60, limit)
+
+    # Plot tripteron with the deflections
+    p_global = np.array([0.5, 0.5, 0.5], dtype=float)
+    q_passive = ikTripteron(T_base, p_global, link, flag)
+    plotTripteronWithDeflection(space, T_base, p_global, q_passive, theta, link, xScatter, yScatter, zScatter, dScatter, cmap, 60, limit)
+
+    if method == 'VJM':
+        Jq = JacobianPassiveTripteron(T_base, T_tool, q_active, q_passive, theta, link)
+        Jtheta = JacobianThetaTripteron(T_base, T_tool, q_active, q_passive, theta, link)
+        Kc = KcTripteronVJM(Ktheta, Jq, Jtheta)
+    elif method == 'MSA':
+        Q = transformStiffness(T_base, p_global, q_passive, link)
+        Kc = KcTripteronMSA(Q, K_active, K11, K12, K21, K22, lambda_e_12, lambda_r_12, lambda_r_34, lambda_r_56, lambda_r_78, lambda_p_34, lambda_p_56, lambda_p_78) """
+
+
+    def plotDeflection(point):
+        p_global = np.array([point[0], point[1], point[2]], dtype=float)                
+        q_active = [[p_global[0]],[p_global[1]],[p_global[2]]]
+        q_passive = ikTripteron(T_base, p_global, link, flag)
+
+        if method == 'VJM':
+            Jq = JacobianPassiveTripteron(T_base, T_tool, q_active, q_passive, theta, link)
+            Jtheta = JacobianThetaTripteron(T_base, T_tool, q_active, q_passive, theta, link)
+            Kc = KcTripteronVJM(Ktheta, Jq, Jtheta)
+        elif method == 'MSA':
+            Q = transformStiffness(T_base, p_global, q_passive, link)
+            Kc = KcTripteronMSA(Q, K_active, K11, K12, K21, K22, lambda_e_12, lambda_r_12, lambda_r_34, lambda_r_56, lambda_r_78, lambda_p_34, lambda_p_56, lambda_p_78)
+
+        # Apply force in all directions
+        u = np.linspace(0, 2 * np.pi, 100)
+        v = np.linspace(0, np.pi, 100)
+        Fx = 1000 * np.outer(np.cos(u), np.sin(v))
+        Fy = 1000 * np.outer(np.sin(u), np.sin(v))
+        Fz = 1000 * np.outer(np.ones(np.size(u)), np.cos(v))
+
+        xData = np.zeros(Fx.shape, dtype=float)
+        yData = np.zeros(Fx.shape, dtype=float)
+        zData = np.zeros(Fx.shape, dtype=float)
+        dData = np.zeros(Fx.shape, dtype=float)
+
+        for i in range(len(Fx)):
+            for j in range(len(Fx[i])):
+                try:
+                    F = np.array([[Fx[i][j]], [Fy[i][j]], [Fz[i][j]], [0], [0], [0]], dtype=float)
+                    dt = dtTripteron(Kc, F)
+                    
+                    xData[i][j] = point[0] + dt[0]
+                    yData[i][j] = point[1] + dt[1]
+                    zData[i][j] = point[2] + dt[2]
+                    dData[i][j] = np.sqrt(dt[0]**2 + dt[1]**2 + dt[2]**2)
+                except (KeyboardInterrupt, SystemExit):
+                    raise
+                except Exception as error:
+                    print(error)
+                    pass
+
+        dMin, dMax = dData.min(), dData.max()
+        scamap = plt.cm.ScalarMappable(cmap='RdGy_r')
+        fcolors = scamap.to_rgba(dData)
+        return xData, yData, zData, fcolors, scamap
+
+    # Plot the surface
+    fig = plt.figure(figsize=(15,10))
+
+    # point 1
+    ax1 = fig.add_subplot(221, projection='3d')
+    ax1.set_xlabel('X')
+    ax1.set_ylabel('Y')
+    ax1.set_zlabel('Z')
+
+    point1 = np.array([0.5, 0.5, 0.5], dtype=float) # first point
+    xData, yData, zData, fcolors, scamap = plotDeflection(point1)
+
+    surf = ax1.plot_surface(xData, yData, zData, facecolors=fcolors, cmap=cmap)
+    fig.colorbar(scamap)
+    if limit[0] == True:
+        surf.set_clim(limit[1], limit[2])
+
+    ax1.view_init(elev=30, azim=40)
+
+    # point 2
+    ax2 = fig.add_subplot(222, projection='3d')
+    ax2.set_xlabel('X')
+    ax2.set_ylabel('Y')
+    ax2.set_zlabel('Z')
+
+    point2 = np.array([0.0, 0.0, 0.0], dtype=float) # first point
+    xData, yData, zData, fcolors, scamap = plotDeflection(point2)
+
+    surf = ax2.plot_surface(xData, yData, zData, facecolors=fcolors, cmap=cmap)
+    fig.colorbar(scamap)
+    if limit[0] == True:
+        surf.set_clim(limit[1], limit[2])
+
+    ax2.view_init(elev=30, azim=40)
+
+    # point 3
+    ax3 = fig.add_subplot(223, projection='3d')
+    ax3.set_xlabel('X')
+    ax3.set_ylabel('Y')
+    ax3.set_zlabel('Z')
+
+    point3 = np.array([0.0, 1.0, 1.0], dtype=float) # first point
+    xData, yData, zData, fcolors, scamap = plotDeflection(point3)
+
+    surf = ax3.plot_surface(xData, yData, zData, facecolors=fcolors, cmap=cmap)
+    fig.colorbar(scamap)
+    if limit[0] == True:
+        surf.set_clim(limit[1], limit[2])
+
+    ax3.view_init(elev=30, azim=40)
+
+    # point 4
+    ax4 = fig.add_subplot(224, projection='3d')
+    ax4.set_xlabel('X')
+    ax4.set_ylabel('Y')
+    ax4.set_zlabel('Z')
+
+    point4 = np.array([1.0, 1.0, 1.0], dtype=float) # first point
+    xData, yData, zData, fcolors, scamap = plotDeflection(point4)
+
+    surf = ax4.plot_surface(xData, yData, zData, facecolors=fcolors, cmap=cmap)
+    fig.colorbar(scamap)
+    if limit[0] == True:
+        surf.set_clim(limit[1], limit[2])
+
+    ax4.view_init(elev=30, azim=40)
+    
+    plt.show()
