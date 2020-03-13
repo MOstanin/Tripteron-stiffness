@@ -1001,7 +1001,7 @@ if __name__ == "__main__":
         Kc = KcTripteronMSA(Q, K_active, K11, K12, K21, K22, lambda_e_12, lambda_r_12, lambda_r_34, lambda_r_56, lambda_r_78, lambda_p_34, lambda_p_56, lambda_p_78) """
 
 
-    def plotDeflection(point):
+    def plotSurface(point):
         p_global = np.array([point[0], point[1], point[2]], dtype=float)                
         q_active = [[p_global[0]],[p_global[1]],[p_global[2]]]
         q_passive = ikTripteron(T_base, p_global, link, flag)
@@ -1057,7 +1057,7 @@ if __name__ == "__main__":
     ax1.set_zlabel('Z')
 
     point1 = np.array([0.5, 0.5, 0.5], dtype=float) # first point
-    xData, yData, zData, fcolors, scamap = plotDeflection(point1)
+    xData, yData, zData, fcolors, scamap = plotSurface(point1)
 
     surf = ax1.plot_surface(xData, yData, zData, facecolors=fcolors, cmap=cmap)
     fig.colorbar(scamap)
@@ -1073,7 +1073,7 @@ if __name__ == "__main__":
     ax2.set_zlabel('Z')
 
     point2 = np.array([0.0, 0.0, 0.0], dtype=float) # first point
-    xData, yData, zData, fcolors, scamap = plotDeflection(point2)
+    xData, yData, zData, fcolors, scamap = plotSurface(point2)
 
     surf = ax2.plot_surface(xData, yData, zData, facecolors=fcolors, cmap=cmap)
     fig.colorbar(scamap)
@@ -1089,7 +1089,7 @@ if __name__ == "__main__":
     ax3.set_zlabel('Z')
 
     point3 = np.array([0.0, 1.0, 1.0], dtype=float) # first point
-    xData, yData, zData, fcolors, scamap = plotDeflection(point3)
+    xData, yData, zData, fcolors, scamap = plotSurface(point3)
 
     surf = ax3.plot_surface(xData, yData, zData, facecolors=fcolors, cmap=cmap)
     fig.colorbar(scamap)
@@ -1105,7 +1105,7 @@ if __name__ == "__main__":
     ax4.set_zlabel('Z')
 
     point4 = np.array([1.0, 1.0, 1.0], dtype=float) # first point
-    xData, yData, zData, fcolors, scamap = plotDeflection(point4)
+    xData, yData, zData, fcolors, scamap = plotSurface(point4)
 
     surf = ax4.plot_surface(xData, yData, zData, facecolors=fcolors, cmap=cmap)
     fig.colorbar(scamap)
