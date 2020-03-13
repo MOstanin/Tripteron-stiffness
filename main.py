@@ -805,6 +805,8 @@ def plotDeflection(x, y, z, deflection, cmap, s, limit):
         cmap.set_clim(limit[1], limit[2])
         
     plt.colorbar(cmap)
+
+    ax.view_init(elev=30, azim=-40)
     plt.show()
 
 
@@ -875,6 +877,11 @@ def plotTripteronWithDeflection(space, T_base, p_global, q_passive, theta, link,
     if limit[0] == True:
         cmap.set_clim(limit[1], limit[2])
     plt.colorbar(cmap)
+
+    ax.view_init(elev=30, azim=-40)
+    
+    filename = './maps/' + 'scatter_' + method + '_' + str(int(F[0])) + '_' + str(int(F[1])) + '_' + str(int(F[2]))
+    plt.savefig(filename + '.svg', format="svg")
     plt.show()
 
 
@@ -914,7 +921,7 @@ if __name__ == "__main__":
     K22 = elementStiffness22(E, G, d[0], link[0])
 
     # Applied force
-    F = np.array([[0], [0], [1000], [0], [0], [0]], dtype=float)
+    F = np.array([[1000], [0], [0], [0], [0], [0]], dtype=float)
 
     method = 'MSA'
 
@@ -925,18 +932,19 @@ if __name__ == "__main__":
     
     cmap = plt.cm.get_cmap('RdGy_r', 12)
     #cmap = 'RdGy_r'
-    limit = [True, 0.0011, 0.0014]
+    limit = [True, 0.0011, 0.0014] # for the force 1000 along all directions
+    #limit = [True, 0.002, 0.0026] # for the force 1000 along one directions
 
-    """ start = 0.01
+    start = 0.1
     step = 0.1
     step_z = 0.1
-    for z in np.arange(start, space_z + start, step_z):
+    for z in np.arange(start, space_z + start - 0.1, step_z):
         xData = np.array([])
         yData = np.array([])
         zData = np.array([])
         dData = np.array([])
-        for x in np.arange(start, space_x + start, step):
-            for y in np.arange(start, space_y + start, step):
+        for x in np.arange(start, space_x + start - 0.1, step):
+            for y in np.arange(start, space_y + start - 0.1, step):
                 try:
                     p_global = np.array([x, y, z], dtype=float)
                     q_active = [[p_global[0]],[p_global[1]],[p_global[2]]]
@@ -983,7 +991,7 @@ if __name__ == "__main__":
         #plt.savefig(filename + '.eps', format="eps")
         plt.close()
 
-    #print('Range: ', np.min(dScatter), np.max(dScatter))
+    print('Range: ', np.min(dScatter), np.max(dScatter))
 
     plotDeflection(xScatter, yScatter, zScatter, dScatter, cmap, 60, limit)
 
@@ -998,7 +1006,7 @@ if __name__ == "__main__":
         Kc = KcTripteronVJM(Ktheta, Jq, Jtheta)
     elif method == 'MSA':
         Q = transformStiffness(T_base, p_global, q_passive, link)
-        Kc = KcTripteronMSA(Q, K_active, K11, K12, K21, K22, lambda_e_12, lambda_r_12, lambda_r_34, lambda_r_56, lambda_r_78, lambda_p_34, lambda_p_56, lambda_p_78) """
+        Kc = KcTripteronMSA(Q, K_active, K11, K12, K21, K22, lambda_e_12, lambda_r_12, lambda_r_34, lambda_r_56, lambda_r_78, lambda_p_34, lambda_p_56, lambda_p_78)
 
 
     def plotSurface(point):
